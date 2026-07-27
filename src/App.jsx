@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { MessageSquare, Scissors, Sparkles, Settings, Terminal, Server, HelpCircle, Layers, ExternalLink } from 'lucide-react';
+import { MessageSquare, Scissors, Sparkles, Settings, Terminal, Server, Users } from 'lucide-react';
 import { DEFAULT_BUSINESS_INFO, INITIAL_CATALOGUE, INITIAL_ORDERS } from './data/initialData';
-import { TailorAgentEngine } from './services/agentEngine';
+import { MultiAgentOrchestrator } from './services/multiAgentOrchestrator';
 import WhatsAppSimulator from './components/WhatsAppSimulator';
 import OrderManager from './components/OrderManager';
 import CatalogueManager from './components/CatalogueManager';
@@ -10,22 +10,20 @@ import SystemPromptExporter from './components/SystemPromptExporter';
 import MeasurementGuideModal from './components/MeasurementGuideModal';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('simulator'); // 'simulator', 'orders', 'catalogue', 'settings', 'prompt', 'backend'
+  const [activeTab, setActiveTab] = useState('simulator');
   const [businessConfig, setBusinessConfig] = useState(DEFAULT_BUSINESS_INFO);
   const [catalogueItems, setCatalogueItems] = useState(INITIAL_CATALOGUE);
   const [orders, setOrders] = useState(INITIAL_ORDERS);
   const [showMeasurementModal, setShowMeasurementModal] = useState(false);
 
-  // Initialize Agent Engine
-  const agentEngine = useMemo(() => new TailorAgentEngine(businessConfig), []);
+  // Initialize Multi-Agent Orchestrator
+  const agentEngine = useMemo(() => new MultiAgentOrchestrator(businessConfig), []);
 
-  // Update business config in engine
   const handleSaveConfig = (newConfig) => {
     setBusinessConfig(newConfig);
     agentEngine.updateConfig(newConfig);
   };
 
-  // Add new order from agent simulation
   const handleNewOrderCreated = (orderDraft) => {
     const newOrder = {
       order_id: orderDraft.order_id || `ZF2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -43,23 +41,30 @@ export default function App() {
       delivery_method: orderDraft.delivery_method || "pickup",
       delivery_address: orderDraft.delivery_address || "Studio Kinondoni",
       status: "received",
-      notes: "Oda imeingia kupitia WhatsApp AI Assistant"
+      notes: "Oda imeingia kupitia WhatsApp Multi-Agent Suite"
     };
 
     setOrders(prev => [newOrder, ...prev]);
   };
 
-  // Update Order Status
   const handleUpdateOrderStatus = (orderId, newStatus) => {
     setOrders(prev =>
       prev.map(o => (o.order_id === orderId ? { ...o, status: newStatus } : o))
     );
   };
 
-  // Add Catalogue Item
   const handleAddCatalogueItem = (newItem) => {
     setCatalogueItems(prev => [newItem, ...prev]);
   };
+
+  const subAgentsList = [
+    { name: businessConfig.bot_name || "Amina Assistant", role: "Receptionist & Intake", avatar: "👗", desc: "Kupokea mteja & kusajili oda" },
+    { name: "Neema Stylist", role: "Fashion Stylist", avatar: "✨", desc: "Ushauri wa mitindo & catalogue" },
+    { name: "Beti Measurements", role: "Measurement Expert", avatar: "📏", desc: "Mwongozo wa kujipima nyumbani" },
+    { name: "Baraka Payments", role: "Finance & Quotes", avatar: "💳", desc: "Makadirio ya bei & Lipa Namba" },
+    { name: "Furaha Tracking", role: "Order Status Tracker", avatar: "📦", desc: "Ufuatiliaji wa hatua za kazi" },
+    { name: "Fundi Zawadi", role: "Human Tailor Handoff", avatar: "✂️", desc: "Kushughulikia mazungumzo magumu" }
+  ];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -73,12 +78,12 @@ export default function App() {
             <div>
               <h1 className="font-extrabold text-lg leading-tight font-heading text-slate-100 flex items-center gap-2">
                 {businessConfig.business_name || "Zawadi Fashion House"}
-                <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-sans font-bold">
-                  WhatsApp Agent Live
+                <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/80 px-2 py-0.5 rounded-full font-sans font-bold flex items-center gap-1">
+                  <Users className="w-3 h-3" /> Multi-Agent Active (6 Sub-Agents)
                 </span>
               </h1>
               <p className="text-xs text-slate-400">
-                Fundi Cherehani Automation & CRM Suite • Powered by AI
+                Multi-Agent Tailor Automation & WhatsApp CRM Architecture
               </p>
             </div>
           </div>
@@ -107,7 +112,7 @@ export default function App() {
             }`}
           >
             <MessageSquare className="w-4 h-4" />
-            WhatsApp Simulator & Bot
+            WhatsApp Multi-Agent Simulator
           </button>
 
           <button
@@ -123,6 +128,18 @@ export default function App() {
             <span className="bg-amber-950 text-amber-400 px-2 py-0.5 rounded-full text-[10px] border border-amber-800/60 font-mono">
               {orders.length}
             </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('agents')}
+            className={`px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all flex items-center gap-2 border-b-2 whitespace-nowrap ${
+              activeTab === 'agents'
+                ? 'border-amber-500 text-amber-400 bg-slate-800/80'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Multi-Agents List (6 Sub-Agents)
           </button>
 
           <button
@@ -158,24 +175,12 @@ export default function App() {
             }`}
           >
             <Terminal className="w-4 h-4" />
-            System Prompt (Copy-Paste)
-          </button>
-
-          <button
-            onClick={() => setActiveTab('backend')}
-            className={`px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all flex items-center gap-2 border-b-2 whitespace-nowrap ${
-              activeTab === 'backend'
-                ? 'border-amber-500 text-amber-400 bg-slate-800/80'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-            }`}
-          >
-            <Server className="w-4 h-4" />
-            Live Node.js WhatsApp Backend Setup
+            System Prompt
           </button>
         </div>
       </header>
 
-      {/* Main App Content View Area */}
+      {/* Main View Area */}
       <main className="flex-1 py-6">
         {activeTab === 'simulator' && (
           <WhatsAppSimulator
@@ -195,6 +200,42 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'agents' && (
+          <div className="w-full max-w-6xl mx-auto p-4 space-y-6">
+            <div className="glass-panel p-6 rounded-3xl border border-slate-800">
+              <h2 className="text-2xl font-bold text-slate-100 font-heading flex items-center gap-2">
+                <Users className="w-6 h-6 text-amber-400" />
+                Muundo wa Multi-Agent System (6 Sub-Agents Specialized System)
+              </h2>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                Kila mteja anapoongea kwenye WhatsApp, <strong>Multi-Agent Orchestrator</strong> inahamisha mawasiliano kiotomatiki kwenda kwa Agent anayehusika kulingana na swali au hatua ya oda:
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {subAgentsList.map((ag, idx) => (
+                <div key={idx} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-3 shadow-xl hover:border-amber-500/40 transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-3xl p-2 bg-slate-950 rounded-2xl border border-slate-800">{ag.avatar}</span>
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-800/60">
+                      Sub-Agent #{idx + 1}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100">{ag.name}</h3>
+                    <p className="text-xs font-semibold text-emerald-400">{ag.role}</p>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed border-t border-slate-800/80 pt-3">
+                    {ag.desc}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'catalogue' && (
           <CatalogueManager
             catalogueItems={catalogueItems}
@@ -212,50 +253,6 @@ export default function App() {
         {activeTab === 'prompt' && (
           <SystemPromptExporter config={businessConfig} />
         )}
-
-        {activeTab === 'backend' && (
-          <div className="w-full max-w-4xl mx-auto p-4 space-y-6">
-            <div className="glass-panel p-6 rounded-3xl border border-slate-800">
-              <h2 className="text-2xl font-bold text-slate-100 font-heading flex items-center gap-2">
-                <Server className="w-6 h-6 text-amber-400" />
-                Maelekezo ya Kuunganisha na Simu Yako ya WhatsApp (Node.js Baileys Backend)
-              </h2>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                Kama unataka kuunganisha Bot hii kwenye namba yako halisi ya WhatsApp kupitia kompyuta yako (bila kulipia API ya Facebook/Twilio), tumia maelekezo haya chini kuanzisha server ya Node.js:
-              </p>
-            </div>
-
-            <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 space-y-4 text-xs">
-              <h3 className="font-bold text-amber-400 text-sm">Hatua za Kuanzisha (Step-by-Step Execution):</h3>
-              <ol className="list-decimal list-inside space-y-3 text-slate-300">
-                <li>
-                  Fungua Terminal au Command Prompt kisha uingie kwenye folda ya backend:
-                  <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-emerald-400 mt-1 font-mono">
-                    cd backend
-                  </pre>
-                </li>
-                <li>
-                  Weka dependencies zote zinazohitajika:
-                  <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-emerald-400 mt-1 font-mono">
-                    npm install
-                  </pre>
-                </li>
-                <li>
-                  Washa WhatsApp Automation Server:
-                  <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-emerald-400 mt-1 font-mono">
-                    npm start
-                  </pre>
-                </li>
-                <li>
-                  Terminal itaonyesha **QR Code**. Fungua WhatsApp kwenye simu yako ya mkononi, nenda **Linked Devices** ➔ **Link a Device** kisha SCAN ile QR Code!
-                </li>
-                <li>
-                  Baada ya hapo, wateja wakikutumia ujumbe kwenye WhatsApp hiyo, server itajibu kiotomatiki kwa kufuata mtiririko kamili wa **Amina Assistant**! 🚀
-                </li>
-              </ol>
-            </div>
-          </div>
-        )}
       </main>
 
       {/* Measurement Modal */}
@@ -265,7 +262,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="bg-slate-950 border-t border-slate-900 py-4 text-center text-xs text-slate-500">
-        <p>© 2026 {businessConfig.business_name || "Zawadi Fashion House"}. System built for Tailor Automation & WhatsApp CRM.</p>
+        <p>© 2026 {businessConfig.business_name || "Zawadi Fashion House"}. Built with Multi-Agent WhatsApp Architecture.</p>
       </footer>
     </div>
   );

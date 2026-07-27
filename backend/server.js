@@ -1,4 +1,4 @@
-// WhatsApp Baileys Automation Server with Process Crash Protection & Dynamic QR Engine
+// WhatsApp Baileys Automation Server with Multi-Agent Architecture & Dynamic QR Engine
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -7,15 +7,14 @@ const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const Baileys = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const NodeTailorBotEngine = require('./botEngine');
+const NodeMultiAgentOrchestrator = require('./multiAgentOrchestrator');
 
-// Catch any unhandled process errors to prevent server from ever shutting down!
 process.on('uncaughtException', (err) => {
-  console.error('⚠️ Uncaught Exception caught (prevented crash):', err.message);
+  console.error('⚠️ Uncaught Exception caught:', err.message);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('⚠️ Unhandled Rejection caught (prevented crash):', reason);
+  console.error('⚠️ Unhandled Rejection caught:', reason);
 });
 
 const makeWASocket = Baileys.default || Baileys.makeWASocket || Baileys;
@@ -27,7 +26,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Disable caching for all API responses
 app.use((req, res, next) => {
   res.header('Cache-Control', 'private, no-cache, no-store, must-revalidate');
   res.header('Expires', '-1');
@@ -36,7 +34,7 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-const bot = new NodeTailorBotEngine();
+const bot = new NodeMultiAgentOrchestrator();
 
 let waSock = null;
 let connectionStatus = 'DISCONNECTED';
@@ -56,7 +54,7 @@ const authFolder = path.join(__dirname, 'baileys_auth_info');
 
 async function connectToWhatsApp() {
   try {
-    addLog('🚀 Initializing Baileys WhatsApp Socket...');
+    addLog('🚀 Initializing Multi-Agent Baileys WhatsApp Socket...');
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     let waVersion;
@@ -111,7 +109,7 @@ async function connectToWhatsApp() {
       } else if (connection === 'open') {
         connectionStatus = 'CONNECTED';
         latestQRCodeData = null;
-        addLog('✅ WHATSAPP AGENT IS LIVE & CONNECTED!');
+        addLog('✅ MULTI-AGENT SYSTEM IS LIVE & CONNECTED!');
       }
     });
 
@@ -134,13 +132,16 @@ async function connectToWhatsApp() {
 
         addLog(`📩 Message from ${senderJid}: "${textMessage}"`);
 
+        const session = bot.getSession(senderJid);
         const botResponse = bot.processMessage(senderJid, textMessage);
+
+        addLog(`🤖 Active Agent: [${session.activeAgent}] handling user ${senderJid.slice(0, 10)}`);
 
         const randomDelay = Math.floor(Math.random() * 2000) + 2000;
         await new Promise(resolve => setTimeout(resolve, randomDelay));
 
         await waSock.sendMessage(senderJid, { text: botResponse });
-        addLog(`📤 Replied to ${senderJid}: "${botResponse.slice(0, 30)}..."`);
+        addLog(`📤 [${session.activeAgent}] Replied: "${botResponse.slice(0, 30)}..."`);
       } catch (err) {
         addLog(`Error handling message: ${err.message}`);
       }
@@ -172,7 +173,6 @@ app.get('/api/status', async (req, res) => {
   });
 });
 
-// Dynamic Auto-updating HTML Page for QR Scanning
 app.get('/qr', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -183,7 +183,7 @@ app.get('/qr', (req, res) => {
         <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
         <meta http-equiv="Pragma" content="no-cache">
         <meta http-equiv="Expires" content="0">
-        <title>Scan WhatsApp QR Code — Zawadi Fashion</title>
+        <title>Scan WhatsApp QR Code — Zawadi Fashion Multi-Agent</title>
         <style>
           body { background: #0b141a; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 40px 15px; margin: 0; }
           .card { background: #111b21; max-width: 420px; margin: 0 auto; padding: 30px; border-radius: 24px; border: 1px solid #1e293b; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
@@ -197,7 +197,7 @@ app.get('/qr', (req, res) => {
       </head>
       <body>
         <div class="card">
-          <div class="badge">👗 Zawadi Fashion Assistant</div>
+          <div class="badge">🤖 Multi-Agent WhatsApp System</div>
           <h2 id="title" style="margin: 0; color: #10b981;">Inatafuta QR Code...</h2>
           <p id="desc" style="color: #94a3b8; font-size: 13px; margin-top: 8px;">Tafadhali subiri sekunde chache...</p>
           
@@ -229,10 +229,10 @@ app.get('/qr', (req, res) => {
               }
 
               if (data.status === 'CONNECTED') {
-                titleEl.innerText = '✅ WhatsApp Agent is CONNECTED!';
+                titleEl.innerText = '✅ Multi-Agent System is CONNECTED!';
                 titleEl.style.color = '#10b981';
-                descEl.innerText = 'Bot ipo hewani tayari kujibu wateja!';
-                container.innerHTML = '<div style="padding: 40px 10px; color: #005c4b; font-weight: bold; font-size: 18px;">CONNECTED ONLINE 🟢</div>';
+                descEl.innerText = 'Multi-Agents zipo hewani tayari kujibu wateja!';
+                container.innerHTML = '<div style="padding: 40px 10px; color: #005c4b; font-weight: bold; font-size: 18px;">MULTI-AGENT ONLINE 🟢</div>';
               } else if (data.qr_image) {
                 titleEl.innerText = '📱 Scan QR Code na WhatsApp Yako';
                 titleEl.style.color = '#10b981';
@@ -253,6 +253,6 @@ app.get('/qr', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  addLog(`👗 TAILOR WHATSAPP AGENT STARTED ON PORT ${PORT}`);
+  addLog(`👗 MULTI-AGENT TAILOR WHATSAPP SERVER STARTED ON PORT ${PORT}`);
   connectToWhatsApp();
 });
