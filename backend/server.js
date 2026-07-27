@@ -1,4 +1,4 @@
-// WhatsApp Baileys Automation Server with Dual Event QR Listener & Linux Browser Tuple
+// WhatsApp Baileys Automation Server with Dynamic Version Fetching & 405 Fix
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -10,6 +10,7 @@ const pino = require('pino');
 const NodeTailorBotEngine = require('./botEngine');
 
 const makeWASocket = Baileys.default || Baileys.makeWASocket || Baileys;
+const fetchLatestBaileysVersion = Baileys.fetchLatestBaileysVersion;
 const useMultiFileAuthState = Baileys.useMultiFileAuthState;
 const DisconnectReason = Baileys.DisconnectReason;
 
@@ -41,11 +42,23 @@ async function connectToWhatsApp() {
     addLog('🚀 Initializing Baileys WhatsApp Socket...');
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
+    // Fetch latest WhatsApp web protocol version to fix Status 405
+    let waVersion;
+    try {
+      const { version, isLatest } = await fetchLatestBaileysVersion();
+      waVersion = version;
+      addLog(`📡 WhatsApp Version: v${version.join('.')} (isLatest: ${isLatest})`);
+    } catch (verErr) {
+      addLog('⚠️ Version fetch fallback used');
+      waVersion = [2, 3000, 1017531287];
+    }
+
     waSock = makeWASocket({
+      version: waVersion, // Crucial fix for 405 Method Not Allowed
       logger: pino({ level: 'silent' }),
       auth: state,
       printQRInTerminal: true,
-      browser: ['Ubuntu', 'Chrome', '120.0.0.0'], // Standard tested Linux browser tuple
+      browser: ['Ubuntu', 'Chrome', '120.0.0.0'],
       connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 60000,
       keepAliveIntervalMs: 15000,
@@ -55,23 +68,22 @@ async function connectToWhatsApp() {
 
     waSock.ev.on('creds.update', saveCreds);
 
-    // QR listener pattern 1: connection.update
     waSock.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
         latestQRCodeData = qr;
-        addLog('📱 NEW QR CODE RECEIVED from connection.update!');
+        addLog('📱 NEW QR CODE GENERATED SUCCESSFULLY!');
         qrcodeTerminal.generate(qr, { small: true });
       }
 
       if (connection === 'close') {
         connectionStatus = 'DISCONNECTED';
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        addLog(`❌ Socket closed (Status Code: ${statusCode})`);
+        addLog(`❌ Socket closed (Status Code: ${statusCode || 'unknown'})`);
 
-        if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-          addLog('🧹 Session logged out. Clearing auth folder...');
+        if (statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 405) {
+          addLog('🧹 Clearing stale session data...');
           latestQRCodeData = null;
           try {
             fs.rmSync(authFolder, { recursive: true, force: true });
@@ -87,11 +99,10 @@ async function connectToWhatsApp() {
       }
     });
 
-    // QR listener pattern 2: direct 'qr' event fallback
     waSock.ev.on('qr', (qr) => {
       if (qr) {
         latestQRCodeData = qr;
-        addLog('📱 NEW QR CODE RECEIVED from ev.on("qr")!');
+        addLog('📱 QR CODE GENERATED via fallback event!');
       }
     });
 
@@ -162,7 +173,7 @@ app.get('/qr', (req, res) => {
           .spinner { border: 4px solid #1e293b; border-top: 4px solid #10b981; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 80px auto; }
           @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
           .badge { background: #005c4b; color: #6ee7b7; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: bold; display: inline-block; margin-bottom: 15px; }
-          .log-area { font-family: monospace; font-size: 10px; color: #64748b; margin-top: 15px; text-align: left; background: #090d10; p: 10px; border-radius: 10px; max-height: 100px; overflow-y: auto; }
+          .log-area { font-family: monospace; font-size: 10px; color: #64748b; margin-top: 15px; text-align: left; background: #090d10; padding: 10px; border-radius: 10px; max-height: 120px; overflow-y: auto; }
         </style>
       </head>
       <body>
@@ -195,6 +206,7 @@ app.get('/qr', (req, res) => {
 
               if (data.logs && data.logs.length > 0) {
                 logBox.innerText = data.logs.join('\\n');
+                logBox.scrollTop = logBox.scrollHeight;
               }
 
               if (data.status === 'CONNECTED') {
