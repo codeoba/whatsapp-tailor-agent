@@ -1,4 +1,4 @@
-// WhatsApp Baileys Automation Server with Dynamic Web QR Engine
+// WhatsApp Baileys Automation Server with Dual Event QR Listener & Linux Browser Tuple
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -9,7 +9,6 @@ const Baileys = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const NodeTailorBotEngine = require('./botEngine');
 
-// Handle CommonJS export variations for Baileys
 const makeWASocket = Baileys.default || Baileys.makeWASocket || Baileys;
 const useMultiFileAuthState = Baileys.useMultiFileAuthState;
 const DisconnectReason = Baileys.DisconnectReason;
@@ -25,57 +24,74 @@ let waSock = null;
 let connectionStatus = 'DISCONNECTED';
 let latestQRCodeData = null;
 let lastErrorLog = 'No errors logged yet';
+let connectionLogs = [];
+
+function addLog(msg) {
+  const time = new Date().toLocaleTimeString();
+  const logStr = `[${time}] ${msg}`;
+  console.log(logStr);
+  connectionLogs.push(logStr);
+  if (connectionLogs.length > 50) connectionLogs.shift();
+}
 
 const authFolder = path.join(__dirname, 'baileys_auth_info');
 
 async function connectToWhatsApp() {
   try {
-    console.log('🚀 Starting Baileys WhatsApp connection...');
+    addLog('🚀 Initializing Baileys WhatsApp Socket...');
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     waSock = makeWASocket({
       logger: pino({ level: 'silent' }),
       auth: state,
       printQRInTerminal: true,
-      browser: ["Zawadi Fashion Agent", "aaPanel Linux", "1.0.0"],
+      browser: ['Ubuntu', 'Chrome', '120.0.0.0'], // Standard tested Linux browser tuple
       connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 60000,
       keepAliveIntervalMs: 15000,
-      retryRequestDelayMs: 2000
+      generateHighQualityLinkPreview: false,
+      syncFullHistory: false
     });
 
     waSock.ev.on('creds.update', saveCreds);
 
+    // QR listener pattern 1: connection.update
     waSock.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
         latestQRCodeData = qr;
-        console.log('\n======================================================');
-        console.log('📱 NEW WHATSAPP QR CODE READY FOR SCANNING!');
-        console.log('======================================================\n');
+        addLog('📱 NEW QR CODE RECEIVED from connection.update!');
         qrcodeTerminal.generate(qr, { small: true });
       }
 
       if (connection === 'close') {
         connectionStatus = 'DISCONNECTED';
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        console.log(`❌ WhatsApp socket closed (Code: ${statusCode})`);
+        addLog(`❌ Socket closed (Status Code: ${statusCode})`);
 
         if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-          console.log('🧹 Clearing stale auth session folder...');
+          addLog('🧹 Session logged out. Clearing auth folder...');
           latestQRCodeData = null;
           try {
             fs.rmSync(authFolder, { recursive: true, force: true });
           } catch (e) {}
         }
 
-        console.log('🔄 Reconnecting in 3 seconds...');
-        setTimeout(connectToWhatsApp, 3000);
+        addLog('🔄 Reconnecting in 4 seconds...');
+        setTimeout(connectToWhatsApp, 4000);
       } else if (connection === 'open') {
         connectionStatus = 'CONNECTED';
         latestQRCodeData = null;
-        console.log('✅ WHATSAPP AGENT IS LIVE & CONNECTED SUCCESSFULLY!');
+        addLog('✅ WHATSAPP AGENT IS LIVE & CONNECTED!');
+      }
+    });
+
+    // QR listener pattern 2: direct 'qr' event fallback
+    waSock.ev.on('qr', (qr) => {
+      if (qr) {
+        latestQRCodeData = qr;
+        addLog('📱 NEW QR CODE RECEIVED from ev.on("qr")!');
       }
     });
 
@@ -89,7 +105,7 @@ async function connectToWhatsApp() {
 
         if (!textMessage) return;
 
-        console.log(`📩 Message from ${senderJid}: "${textMessage}"`);
+        addLog(`📩 Message from ${senderJid}: "${textMessage}"`);
 
         const botResponse = bot.processMessage(senderJid, textMessage);
 
@@ -97,15 +113,15 @@ async function connectToWhatsApp() {
         await new Promise(resolve => setTimeout(resolve, randomDelay));
 
         await waSock.sendMessage(senderJid, { text: botResponse });
-        console.log(`📤 Replied to ${senderJid}: "${botResponse.slice(0, 40)}..."`);
+        addLog(`📤 Replied to ${senderJid}: "${botResponse.slice(0, 30)}..."`);
       } catch (err) {
-        console.error('Error processing message:', err);
+        addLog(`Error handling message: ${err.message}`);
       }
     });
   } catch (e) {
     lastErrorLog = e.stack || e.toString();
-    console.error('CRITICAL ERROR in connectToWhatsApp:', e);
-    setTimeout(connectToWhatsApp, 3000);
+    addLog(`CRITICAL ERROR: ${lastErrorLog}`);
+    setTimeout(connectToWhatsApp, 4000);
   }
 }
 
@@ -124,19 +140,9 @@ app.get('/api/status', async (req, res) => {
     bot_name: bot.config.bot_name,
     has_qr: !!latestQRCodeData,
     qr_image: qrImage,
-    last_error: lastErrorLog
+    last_error: lastErrorLog,
+    logs: connectionLogs.slice(-10)
   });
-});
-
-// Debug endpoint to view server logs in browser
-app.get('/api/log', (req, res) => {
-  const logFile = path.join(__dirname, 'bot.log');
-  if (fs.existsSync(logFile)) {
-    const logs = fs.readFileSync(logFile, 'utf8');
-    res.type('text/plain').send(logs.slice(-3000));
-  } else {
-    res.send('bot.log file not created yet or empty. Last error: ' + lastErrorLog);
-  }
 });
 
 // Dynamic Auto-updating HTML Page for QR Scanning
@@ -156,6 +162,7 @@ app.get('/qr', (req, res) => {
           .spinner { border: 4px solid #1e293b; border-top: 4px solid #10b981; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 80px auto; }
           @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
           .badge { background: #005c4b; color: #6ee7b7; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: bold; display: inline-block; margin-bottom: 15px; }
+          .log-area { font-family: monospace; font-size: 10px; color: #64748b; margin-top: 15px; text-align: left; background: #090d10; p: 10px; border-radius: 10px; max-height: 100px; overflow-y: auto; }
         </style>
       </head>
       <body>
@@ -168,9 +175,11 @@ app.get('/qr', (req, res) => {
             <div class="spinner"></div>
           </div>
 
-          <div style="font-size: 11px; color: #64748b; margin-top: 15px;">
+          <div style="font-size: 11px; color: #64748b; margin-top: 10px;">
             WhatsApp ➔ Linked Devices ➔ Link a Device
           </div>
+
+          <div class="log-area" id="log-box">Log: Loading...</div>
         </div>
 
         <script>
@@ -182,12 +191,17 @@ app.get('/qr', (req, res) => {
               const titleEl = document.getElementById('title');
               const descEl = document.getElementById('desc');
               const container = document.getElementById('qr-container');
+              const logBox = document.getElementById('log-box');
+
+              if (data.logs && data.logs.length > 0) {
+                logBox.innerText = data.logs.join('\\n');
+              }
 
               if (data.status === 'CONNECTED') {
                 titleEl.innerText = '✅ WhatsApp Agent is CONNECTED!';
                 titleEl.style.color = '#10b981';
                 descEl.innerText = 'Bot ipo hewani tayari kujibu wateja!';
-                container.innerHTML = '<div style="padding: 40px 10px; color: #005c4b; font-weight: bold;">CONNECTED ONLINE 🟢</div>';
+                container.innerHTML = '<div style="padding: 40px 10px; color: #005c4b; font-weight: bold; font-size: 18px;">CONNECTED ONLINE 🟢</div>';
               } else if (data.qr_image) {
                 titleEl.innerText = '📱 Scan QR Code na WhatsApp Yako';
                 titleEl.style.color = '#10b981';
@@ -208,10 +222,6 @@ app.get('/qr', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(`👗 TAILOR WHATSAPP AGENT BACKEND SERVER STARTED!`);
-  console.log(`🌐 Server running at http://localhost:${PORT}`);
-  console.log(`📱 Dynamic Web QR Page: http://localhost:${PORT}/qr`);
-  console.log(`======================================================\n`);
+  addLog(`👗 TAILOR WHATSAPP AGENT STARTED ON PORT ${PORT}`);
   connectToWhatsApp();
 });
