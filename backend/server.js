@@ -1,4 +1,4 @@
-// WhatsApp Baileys Automation Server with Dynamic Version Fetching & 405 Fix
+// WhatsApp Baileys Automation Server with Dynamic Web QR Engine & Cache-Busting
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -17,6 +17,14 @@ const DisconnectReason = Baileys.DisconnectReason;
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Disable caching for all API responses
+app.use((req, res, next) => {
+  res.header('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+  res.header('Expires', '-1');
+  res.header('Pragma', 'no-cache');
+  next();
+});
 
 const PORT = process.env.PORT || 5000;
 const bot = new NodeTailorBotEngine();
@@ -42,7 +50,6 @@ async function connectToWhatsApp() {
     addLog('🚀 Initializing Baileys WhatsApp Socket...');
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
-    // Fetch latest WhatsApp web protocol version to fix Status 405
     let waVersion;
     try {
       const { version, isLatest } = await fetchLatestBaileysVersion();
@@ -54,7 +61,7 @@ async function connectToWhatsApp() {
     }
 
     waSock = makeWASocket({
-      version: waVersion, // Crucial fix for 405 Method Not Allowed
+      version: waVersion,
       logger: pino({ level: 'silent' }),
       auth: state,
       printQRInTerminal: true,
@@ -164,6 +171,9 @@ app.get('/qr', (req, res) => {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
         <title>Scan WhatsApp QR Code — Zawadi Fashion</title>
         <style>
           body { background: #0b141a; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 40px 15px; margin: 0; }
@@ -196,7 +206,7 @@ app.get('/qr', (req, res) => {
         <script>
           async function checkStatus() {
             try {
-              const res = await fetch('/api/status');
+              const res = await fetch('/api/status?t=' + Date.now());
               const data = await res.json();
               
               const titleEl = document.getElementById('title');
