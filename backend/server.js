@@ -1,4 +1,4 @@
-// WhatsApp Baileys Automation Server with Dynamic Web QR Engine & Cache-Busting
+// WhatsApp Baileys Automation Server with Process Crash Protection & Dynamic QR Engine
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -8,6 +8,15 @@ const QRCode = require('qrcode');
 const Baileys = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const NodeTailorBotEngine = require('./botEngine');
+
+// Catch any unhandled process errors to prevent server from ever shutting down!
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Uncaught Exception caught (prevented crash):', err.message);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ Unhandled Rejection caught (prevented crash):', reason);
+});
 
 const makeWASocket = Baileys.default || Baileys.makeWASocket || Baileys;
 const fetchLatestBaileysVersion = Baileys.fetchLatestBaileysVersion;
