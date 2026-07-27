@@ -16,74 +16,82 @@ const bot = new NodeTailorBotEngine();
 
 let waSock = null;
 let connectionStatus = 'DISCONNECTED';
-let latestQRCodeData = null; // Store latest QR code for web view
+let latestQRCodeData = null; // Store latest QR code string
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
 
-  waSock = makeWASocket({
-    logger: pino({ level: 'silent' }),
-    auth: state,
-    printQRInTerminal: true,
-    browser: ["Zawadi Fashion Agent", "aaPanel Server", "1.0.0"]
-  });
+    waSock = makeWASocket({
+      logger: pino({ level: 'silent' }),
+      auth: state,
+      printQRInTerminal: true,
+      browser: ["Zawadi Fashion Agent", "aaPanel Server", "1.0.0"],
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
+    });
 
-  waSock.ev.on('creds.update', saveCreds);
+    waSock.ev.on('creds.update', saveCreds);
 
-  waSock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
+    waSock.ev.on('connection.update', (update) => {
+      const { connection, lastDisconnect, qr } = update;
 
-    if (qr) {
-      latestQRCodeData = qr;
-      console.log('\n======================================================');
-      console.log('📱 SCAN THIS QR CODE WITH YOUR WHATSAPP TO CONNECT:');
-      console.log('======================================================\n');
-      qrcodeTerminal.generate(qr, { small: true });
-    }
-
-    if (connection === 'close') {
-      connectionStatus = 'DISCONNECTED';
-      latestQRCodeData = null;
-      const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
-      console.log('❌ Connection closed due to ', lastDisconnect?.error, ', reconnecting: ', shouldReconnect);
-      if (shouldReconnect) {
-        setTimeout(connectToWhatsApp, 3000);
+      if (qr) {
+        latestQRCodeData = qr;
+        console.log('\n======================================================');
+        console.log('📱 NEW QR CODE GENERATED FOR SCANNING:');
+        console.log('======================================================\n');
+        qrcodeTerminal.generate(qr, { small: true });
       }
-    } else if (connection === 'open') {
-      connectionStatus = 'CONNECTED';
-      latestQRCodeData = null;
-      console.log('✅ WHATSAPP AGENT IS LIVE & CONNECTED SUCCESSFULLY!');
-    }
-  });
 
-  waSock.ev.on('messages.upsert', async (m) => {
-    try {
-      const msg = m.messages[0];
-      if (!msg.message || msg.key.fromMe) return;
+      if (connection === 'close') {
+        connectionStatus = 'DISCONNECTED';
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const shouldReconnect = (statusCode !== DisconnectReason.loggedOut);
+        console.log(`❌ Connection closed (Code: ${statusCode}), reconnecting in 5s: `, shouldReconnect);
+        if (shouldReconnect) {
+          setTimeout(connectToWhatsApp, 5000);
+        }
+      } else if (connection === 'open') {
+        connectionStatus = 'CONNECTED';
+        latestQRCodeData = null;
+        console.log('✅ WHATSAPP AGENT IS LIVE & CONNECTED SUCCESSFULLY!');
+      }
+    });
 
-      const senderJid = msg.key.remoteJid;
-      const textMessage = msg.message.conversation || msg.message.extendedTextMessage?.text;
+    waSock.ev.on('messages.upsert', async (m) => {
+      try {
+        const msg = m.messages[0];
+        if (!msg.message || msg.key.fromMe) return;
 
-      if (!textMessage) return;
+        const senderJid = msg.key.remoteJid;
+        const textMessage = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
-      console.log(`📩 Message from ${senderJid}: "${textMessage}"`);
+        if (!textMessage) return;
 
-      // Process message through Tailor AI Agent engine
-      const botResponse = bot.processMessage(senderJid, textMessage);
+        console.log(`📩 Message from ${senderJid}: "${textMessage}"`);
 
-      // Anti-Ban Safeguard: Human typing delay (2-4 seconds)
-      const randomDelay = Math.floor(Math.random() * 2000) + 2000;
-      await new Promise(resolve => setTimeout(resolve, randomDelay));
+        // Process message through Tailor AI Agent engine
+        const botResponse = bot.processMessage(senderJid, textMessage);
 
-      await waSock.sendMessage(senderJid, { text: botResponse });
-      console.log(`📤 Replied to ${senderJid}: "${botResponse.slice(0, 40)}..."`);
-    } catch (err) {
-      console.error('Error processing message:', err);
-    }
-  });
+        // Anti-Ban Safeguard: Human typing delay (2-4 seconds)
+        const randomDelay = Math.floor(Math.random() * 2000) + 2000;
+        await new Promise(resolve => setTimeout(resolve, randomDelay));
+
+        await waSock.sendMessage(senderJid, { text: botResponse });
+        console.log(`📤 Replied to ${senderJid}: "${botResponse.slice(0, 40)}..."`);
+      } catch (err) {
+        console.error('Error processing message:', err);
+      }
+    });
+  } catch (e) {
+    console.error('Error in connectToWhatsApp:', e);
+    setTimeout(connectToWhatsApp, 5000);
+  }
 }
 
-// REST API & WEB QR ROUTE (FOR EASY AAPANEL & PHONE SCANNING)
+// REST API & WEB QR ROUTE
 app.get('/qr', async (req, res) => {
   if (connectionStatus === 'CONNECTED') {
     return res.send(`
@@ -102,10 +110,17 @@ app.get('/qr', async (req, res) => {
     return res.send(`
       <!DOCTYPE html>
       <html>
-        <head><title>WhatsApp Status</title><meta http-equiv="refresh" content="3"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-        <body style="background:#0f172a; color:#fff; font-family:sans-serif; text-align:center; padding:50px 20px;">
-          <h2 style="color:#f59e0b;">⏳ Generating QR Code...</h2>
-          <p style="color:#94a3b8;">Please wait 3 seconds for QR code generation.</p>
+        <head>
+          <title>WhatsApp Status</title>
+          <meta http-equiv="refresh" content="3">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="background:#0f172a; color:#fff; font-family:sans-serif; text-align:center; padding:60px 20px;">
+          <h2 style="color:#f59e0b; font-size:24px;">⏳ Generating QR Code...</h2>
+          <p style="color:#94a3b8; font-size:15px; margin-top:10px;">Refreshing automatically in 3 seconds...</p>
+          <div style="margin-top:30px; font-size:12px; color:#64748b;">
+            (Or view terminal log: <code style="color:#38bdf8;">cat /www/wwwroot/whatsapp-tailor-agent/backend/bot.log</code>)
+          </div>
         </body>
       </html>
     `);
@@ -119,7 +134,7 @@ app.get('/qr', async (req, res) => {
         <head>
           <title>Scan WhatsApp QR Code</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <meta http-equiv="refresh" content="15">
+          <meta http-equiv="refresh" content="12">
         </head>
         <body style="background:#0b141a; color:#fff; font-family:sans-serif; text-align:center; padding:30px 15px;">
           <h2 style="color:#10b981; margin-bottom:5px;">📱 Scan to Connect WhatsApp Agent</h2>
@@ -127,7 +142,7 @@ app.get('/qr', async (req, res) => {
           <div style="background:#fff; padding:20px; display:inline-block; border-radius:20px; margin:20px 0; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
             <img src="${qrImage}" style="width:260px; height:260px; display:block;" />
           </div>
-          <p style="color:#64748b; font-size:12px;">This page auto-refreshes every 15 seconds.</p>
+          <p style="color:#64748b; font-size:12px;">This page auto-refreshes every 12 seconds.</p>
         </body>
       </html>
     `);
