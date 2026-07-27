@@ -5,9 +5,14 @@ const fs = require('fs');
 const path = require('path');
 const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const Baileys = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const NodeTailorBotEngine = require('./botEngine');
+
+// Handle CommonJS export variations for Baileys
+const makeWASocket = Baileys.default || Baileys.makeWASocket || Baileys;
+const useMultiFileAuthState = Baileys.useMultiFileAuthState;
+const DisconnectReason = Baileys.DisconnectReason;
 
 const app = express();
 app.use(cors());
@@ -19,11 +24,13 @@ const bot = new NodeTailorBotEngine();
 let waSock = null;
 let connectionStatus = 'DISCONNECTED';
 let latestQRCodeData = null;
+let lastErrorLog = 'No errors logged yet';
 
 const authFolder = path.join(__dirname, 'baileys_auth_info');
 
 async function connectToWhatsApp() {
   try {
+    console.log('🚀 Starting Baileys WhatsApp connection...');
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     waSock = makeWASocket({
@@ -55,7 +62,6 @@ async function connectToWhatsApp() {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`❌ WhatsApp socket closed (Code: ${statusCode})`);
 
-        // If logged out or session corrupted, clear auth folder to force new QR
         if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
           console.log('🧹 Clearing stale auth session folder...');
           latestQRCodeData = null;
@@ -97,7 +103,8 @@ async function connectToWhatsApp() {
       }
     });
   } catch (e) {
-    console.error('Error initializing WhatsApp socket:', e);
+    lastErrorLog = e.stack || e.toString();
+    console.error('CRITICAL ERROR in connectToWhatsApp:', e);
     setTimeout(connectToWhatsApp, 3000);
   }
 }
@@ -116,8 +123,20 @@ app.get('/api/status', async (req, res) => {
     business: bot.config.business_name,
     bot_name: bot.config.bot_name,
     has_qr: !!latestQRCodeData,
-    qr_image: qrImage
+    qr_image: qrImage,
+    last_error: lastErrorLog
   });
+});
+
+// Debug endpoint to view server logs in browser
+app.get('/api/log', (req, res) => {
+  const logFile = path.join(__dirname, 'bot.log');
+  if (fs.existsSync(logFile)) {
+    const logs = fs.readFileSync(logFile, 'utf8');
+    res.type('text/plain').send(logs.slice(-3000));
+  } else {
+    res.send('bot.log file not created yet or empty. Last error: ' + lastErrorLog);
+  }
 });
 
 // Dynamic Auto-updating HTML Page for QR Scanning
@@ -141,12 +160,12 @@ app.get('/qr', (req, res) => {
       </head>
       <body>
         <div class="card">
-          <div className="badge">👗 Zawadi Fashion Assistant</div>
+          <div class="badge">👗 Zawadi Fashion Assistant</div>
           <h2 id="title" style="margin: 0; color: #10b981;">Inatafuta QR Code...</h2>
           <p id="desc" style="color: #94a3b8; font-size: 13px; margin-top: 8px;">Tafadhali subiri sekunde chache...</p>
           
-          <div className="qr-box" id="qr-container">
-            <div className="spinner"></div>
+          <div class="qr-box" id="qr-container">
+            <div class="spinner"></div>
           </div>
 
           <div style="font-size: 11px; color: #64748b; margin-top: 15px;">
@@ -181,7 +200,7 @@ app.get('/qr', (req, res) => {
           }
 
           checkStatus();
-          setInterval(checkStatus, 1500); // Check every 1.5s live
+          setInterval(checkStatus, 1500);
         </script>
       </body>
     </html>
